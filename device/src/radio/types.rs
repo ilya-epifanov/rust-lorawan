@@ -8,6 +8,31 @@ pub struct RfConfig {
     pub coding_rate: CodingRate,
 }
 
+impl RfConfig {
+    pub fn time_on_air_us(&self, preamble: u32, explicit_header: bool, length: u32) -> u32 {
+        let bw_hz: u32 = u32::from(self.bandwidth) / 1000u32;
+        let sf: u32 = self.spreading_factor.into();
+        let t_sym_us = 2u32.pow(sf) * 1000 / bw_hz;
+
+        let cr = self.coding_rate.denom();
+        let de = if sf >= 11 { 1 } else { 0 };
+        let h = if explicit_header { 0 } else { 1 };
+
+        fn div_ceil(num: u32, denom: u32) -> u32 {
+            (num - 1) / denom + 1
+        }
+
+        let big_ratio = div_ceil(8*length - 4*sf + 28 + 16 - 20*h, 4*(sf - 2*de));
+        let payload_symb_nb = 8 + (big_ratio * cr).max(0);
+
+        if preamble == 0 {
+            t_sym_us * payload_symb_nb
+        } else {
+            (4 * preamble + 17 + 4 * payload_symb_nb) * t_sym_us / 4
+        }
+    }
+}
+
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TxConfig {

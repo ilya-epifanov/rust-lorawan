@@ -3,7 +3,7 @@ use super::region::constants::DEFAULT_DBM;
 use super::Timings;
 
 use lora_phy::mod_params::{BoardType, ChipType, RadioError};
-use lora_phy::mod_traits::RadioKind;
+use lora_phy::mod_traits::{RadioKind, DesiredIrqState, IrqState};
 use lora_phy::{DelayUs, LoRa};
 
 /// LoRa radio using the physical layer API in the external lora-phy crate
@@ -126,4 +126,22 @@ where
             Err(Error::NoRxParams)
         }
     }
+
+    async fn rx_until_state(
+        &mut self,
+        receiving_buffer: &mut [u8],
+        desired_state: DesiredIrqState,
+    ) -> Result<IrqState, Self::PhyError> {
+        if let Some(rx_params) = &self.rx_pkt_params {
+            match self.lora.rx_until_state(rx_params, receiving_buffer, desired_state).await {
+                Ok(rx_state) => {
+                    Ok(rx_state)
+                }
+                Err(err) => Err(err.into()),
+            }
+        } else {
+            Err(Error::NoRxParams)
+        }
+    }
+
 }
