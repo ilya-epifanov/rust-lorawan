@@ -13,7 +13,7 @@ use defmt::{debug, trace, warn};
 use futures::{future::select, future::Either, pin_mut};
 use generic_array::{typenum::U256, GenericArray};
 use heapless::Vec;
-use lora_phy::{mod_traits::IrqState, mod_params::PacketStatus};
+use lora_phy::{mod_params::PacketStatus, mod_traits::IrqState};
 use lorawan::{
     self,
     creator::DataPayloadCreator,
@@ -466,7 +466,8 @@ where
         window_delay: u32,
         expected_payload_length: usize,
     ) -> Result<(), Error<R::PhyError>> {
-        let num_read = self.rx_with_timeout_inner(frame, window_delay, expected_payload_length).await?;
+        let num_read =
+            self.rx_with_timeout_inner(frame, window_delay, expected_payload_length).await?;
         self.radio_buffer.inc(num_read);
         Ok(())
     }
@@ -482,20 +483,21 @@ where
         // Pass the full radio buffer slice to RX
         self.phy.radio.setup_rx(rx_config).await.map_err(Error::Radio)?;
         let state = {
-            let rx_preamble_fut = self.phy.radio.rx_until_state(self.radio_buffer.as_raw_slice(), lora_phy::mod_traits::DesiredIrqState::PreambleReceived);
+            let rx_preamble_fut = self.phy.radio.rx_until_state(
+                self.radio_buffer.as_raw_slice(),
+                lora_phy::mod_traits::DesiredIrqState::PreambleReceived,
+            );
             let timeout_to_preamble_fut = self.timer.at(preamble_deadline as u64);
-    
+
             pin_mut!(rx_preamble_fut);
             pin_mut!(timeout_to_preamble_fut);
-    
+
             match select(rx_preamble_fut, timeout_to_preamble_fut).await {
                 Either::Left((r, _)) => match r {
-                    Ok(state) => {
-                        state
-                    },
+                    Ok(state) => state,
                     Err(err) => {
                         return Err(Error::Radio(err));
-                    },
+                    }
                 },
                 Either::Right(_) => return Err(Error::RxTimeout),
             }
@@ -505,29 +507,26 @@ where
             IrqState::Waiting => return Err(Error::RxTimeout),
             IrqState::PreambleReceived => {
                 // continue with reception
-            },
+            }
             IrqState::Done(length, status) => return Ok((length, status)),
         }
 
         #[cfg(feature = "defmt")]
         debug!("preamble received, waiting for payload");
 
-        let rx_full_fut = self.phy.radio.rx_until_state(self.radio_buffer.as_raw_slice(), lora_phy::mod_traits::DesiredIrqState::Done);
+        let rx_full_fut = self.phy.radio.rx_until_state(
+            self.radio_buffer.as_raw_slice(),
+            lora_phy::mod_traits::DesiredIrqState::Done,
+        );
         let timeout_fut = self.timer.delay_ms(message_timeout_ms as u64);
 
         pin_mut!(rx_full_fut);
         pin_mut!(timeout_fut);
 
         match select(rx_full_fut, timeout_fut).await {
-            Either::Left((Ok(IrqState::Done(length, lq)), _)) => {
-                Ok((length, lq))
-            },
-            Either::Left((Err(err), _)) => {
-                Err(Error::Radio(err))
-            },
-            _ => {
-                Err(Error::RxTimeout)
-            }
+            Either::Left((Ok(IrqState::Done(length, lq)), _)) => Ok((length, lq)),
+            Either::Left((Err(err), _)) => Err(Error::Radio(err)),
+            _ => Err(Error::RxTimeout),
         }
     }
 
@@ -546,7 +545,8 @@ where
             + window_delay as i32
             + self.phy.radio.get_rx_window_offset_ms()) as u32;
 
-        let rx1_end_delay: u32 = min(rx1_start_delay + self.phy.radio.get_rx_window_duration_ms(), rx2_start_delay);
+        let rx1_end_delay: u32 =
+            min(rx1_start_delay + self.phy.radio.get_rx_window_duration_ms(), rx2_start_delay);
 
         let rx2_end_delay = rx2_start_delay + self.phy.radio.get_rx_window_duration_ms();
 
@@ -557,10 +557,18 @@ where
         let rx_config = self.region.get_rx_config(self.datarate, frame, &Window::_1);
         #[cfg(feature = "defmt")]
         trace!("RX1 with config: {}", &rx_config);
-        let expected_payload_air_time_us = rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
+        let expected_payload_air_time_us =
+            rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
         #[cfg(feature = "defmt")]
         trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
-        match self.rx_with_preamble_deadline(rx_config, rx1_end_delay, expected_payload_air_time_us / 1_000).await {
+        match self
+            .rx_with_preamble_deadline(
+                rx_config,
+                rx1_end_delay,
+                expected_payload_air_time_us / 1_000,
+            )
+            .await
+        {
             Ok((length, _status)) => {
                 self.phy.radio.low_power().await.map_err(Error::Radio)?;
                 return Ok(length as usize);
@@ -576,10 +584,17 @@ where
         let rx_config = self.region.get_rx_config(self.datarate, frame, &Window::_2);
         #[cfg(feature = "defmt")]
         trace!("RX2 with config: {}", &rx_config);
-        let expected_payload_air_time_us = rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
+        let expected_payload_air_time_us =
+            rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
         #[cfg(feature = "defmt")]
         trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
-        let rxd = self.rx_with_preamble_deadline(rx_config, rx2_end_delay, expected_payload_air_time_us / 1_000).await;
+        let rxd = self
+            .rx_with_preamble_deadline(
+                rx_config,
+                rx2_end_delay,
+                expected_payload_air_time_us / 1_000,
+            )
+            .await;
         self.phy.radio.low_power().await.map_err(Error::Radio)?;
         Ok(rxd?.0 as usize)
     }

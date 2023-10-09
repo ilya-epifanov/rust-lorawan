@@ -15,14 +15,22 @@ impl RfConfig {
         let t_sym_us = 2u32.pow(sf) * 1000 / bw_hz;
 
         let cr = self.coding_rate.denom();
-        let de = if sf >= 11 { 1 } else { 0 };
-        let h = if explicit_header { 0 } else { 1 };
+        let de = if sf >= 11 {
+            1
+        } else {
+            0
+        };
+        let h = if explicit_header {
+            0
+        } else {
+            1
+        };
 
         fn div_ceil(num: u32, denom: u32) -> u32 {
             (num - 1) / denom + 1
         }
 
-        let big_ratio = div_ceil(8*length - 4*sf + 28 + 16 - 20*h, 4*(sf - 2*de));
+        let big_ratio = div_ceil(8 * length - 4 * sf + 28 + 16 - 20 * h, 4 * (sf - 2 * de));
         let payload_symb_nb = 8 + (big_ratio * cr).max(0);
 
         if preamble == 0 {

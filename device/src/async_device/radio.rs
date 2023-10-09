@@ -1,4 +1,7 @@
-use lora_phy::{mod_traits::{IrqState, DesiredIrqState}, mod_params::PacketStatus};
+use lora_phy::{
+    mod_params::PacketStatus,
+    mod_traits::{DesiredIrqState, IrqState},
+};
 
 pub use crate::radio::{Bandwidth, CodingRate, RfConfig, RxQuality, SpreadingFactor, TxConfig};
 
@@ -43,7 +46,9 @@ pub trait PhyRxTx: Sized {
     /// possible to await the future again without settings up the receive config again.
     async fn rx(&mut self, rx_buf: &mut [u8]) -> Result<(usize, RxQuality), Self::PhyError> {
         loop {
-            if let IrqState::Done(length, lq) = self.rx_until_state(rx_buf, DesiredIrqState::Done).await? {
+            if let IrqState::Done(length, lq) =
+                self.rx_until_state(rx_buf, DesiredIrqState::Done).await?
+            {
                 return Ok((length as usize, RxQuality::new(lq.rssi, lq.snr as i8)));
             }
         }
@@ -52,12 +57,13 @@ pub trait PhyRxTx: Sized {
     /// Receive data into the provided buffer with the given transceiver configuration. The returned
     /// future should only complete when the target RX state has been reached. Furthermore, it should be
     /// possible to await the future again without settings up the receive config again.
-    async fn rx_until_state(&mut self, rx_buf: &mut [u8], _desired_state: DesiredIrqState) -> Result<IrqState, Self::PhyError> {
+    async fn rx_until_state(
+        &mut self,
+        rx_buf: &mut [u8],
+        _desired_state: DesiredIrqState,
+    ) -> Result<IrqState, Self::PhyError> {
         let (length, lq) = self.rx(rx_buf).await?;
-        Ok(IrqState::Done(length as u8, PacketStatus {
-            rssi: lq.rssi(),
-            snr: lq.snr() as i16,
-        }))
+        Ok(IrqState::Done(length as u8, PacketStatus { rssi: lq.rssi(), snr: lq.snr() as i16 }))
     }
 
     /// Puts the radio into a low-power mode
