@@ -9,7 +9,7 @@ use super::{
 };
 use core::marker::PhantomData;
 #[cfg(feature = "defmt")]
-use defmt::warn;
+use defmt::{debug, trace, warn};
 use futures::{future::select, future::Either, pin_mut};
 use generic_array::{typenum::U256, GenericArray};
 use heapless::Vec;
@@ -509,7 +509,8 @@ where
             IrqState::Done(length, status) => return Ok((length, status)),
         }
 
-        info!("preamble received, waiting for payload");
+        #[cfg(feature = "defmt")]
+        debug!("preamble received, waiting for payload");
 
         let rx_full_fut = self.phy.radio.rx_until_state(self.radio_buffer.as_raw_slice(), lora_phy::mod_traits::DesiredIrqState::Done);
         let timeout_fut = self.timer.delay_ms(message_timeout_ms as u64);
@@ -549,22 +550,23 @@ where
 
         let rx2_end_delay = rx2_start_delay + self.phy.radio.get_rx_window_duration_ms();
 
-        info!("RX1: {}, RX2: {}", rx1_start_delay, rx2_start_delay);
-
         self.radio_buffer.clear();
         // Wait until RX1 window opens
         self.timer.at(rx1_start_delay.into()).await;
 
         let rx_config = self.region.get_rx_config(self.datarate, frame, &Window::_1);
-        debug!("RX1 with config: {}", &rx_config);
+        #[cfg(feature = "defmt")]
+        trace!("RX1 with config: {}", &rx_config);
         let expected_payload_air_time_us = rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
-        debug!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
+        #[cfg(feature = "defmt")]
+        trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
         match self.rx_with_preamble_deadline(rx_config, rx1_end_delay, expected_payload_air_time_us / 1_000).await {
             Ok((length, _status)) => {
                 self.phy.radio.low_power().await.map_err(Error::Radio)?;
                 return Ok(length as usize);
             }
             Err(err) => {
+                #[cfg(feature = "defmt")]
                 debug!("failed receiving an RX1 response: {}", err);
                 self.phy.radio.low_power().await.map_err(Error::Radio)?;
                 self.timer.at(rx2_start_delay.into()).await; // TODO: what if it's already expired?
@@ -572,9 +574,11 @@ where
         }
 
         let rx_config = self.region.get_rx_config(self.datarate, frame, &Window::_2);
-        debug!("RX2 with config: {}", &rx_config);
+        #[cfg(feature = "defmt")]
+        trace!("RX2 with config: {}", &rx_config);
         let expected_payload_air_time_us = rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
-        debug!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
+        #[cfg(feature = "defmt")]
+        trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
         let rxd = self.rx_with_preamble_deadline(rx_config, rx2_end_delay, expected_payload_air_time_us / 1_000).await;
         self.phy.radio.low_power().await.map_err(Error::Radio)?;
         Ok(rxd?.0 as usize)
