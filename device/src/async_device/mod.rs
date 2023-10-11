@@ -559,7 +559,7 @@ where
         #[cfg(feature = "defmt")]
         trace!("RX1 with config: {}", &rx_config);
         let expected_payload_air_time_us =
-            rx_config.payload_time_on_air_us(expected_payload_length as u32) + 50_000;
+            rx_config.payload_time_on_air_us(expected_payload_length as u8) + 50_000;
         #[cfg(feature = "defmt")]
         trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
         match self
@@ -586,7 +586,7 @@ where
         #[cfg(feature = "defmt")]
         trace!("RX2 with config: {}", &rx_config);
         let expected_payload_air_time_us =
-            rx_config.payload_time_on_air_us(expected_payload_length as u32) + 50_000;
+            rx_config.payload_time_on_air_us(expected_payload_length as u8) + 50_000;
         #[cfg(feature = "defmt")]
         trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
         let rxd = self
