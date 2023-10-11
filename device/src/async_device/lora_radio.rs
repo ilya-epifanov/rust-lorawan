@@ -3,8 +3,28 @@ use super::region::constants::DEFAULT_DBM;
 use super::Timings;
 
 use lora_phy::mod_params::{BoardType, ChipType, RadioError};
-use lora_phy::mod_traits::RadioKind;
+use lora_phy::mod_traits::{IrqState, RadioKind, TargetIrqState};
 use lora_phy::{DelayUs, LoRa};
+
+impl From<TargetRxState> for TargetIrqState {
+    fn from(value: TargetRxState) -> Self {
+        match value {
+            TargetRxState::PreambleReceived => TargetIrqState::PreambleReceived,
+            TargetRxState::Done => TargetIrqState::Done,
+        }
+    }
+}
+
+impl From<IrqState> for RxState {
+    fn from(value: IrqState) -> Self {
+        match value {
+            IrqState::PreambleReceived => Self::PreambleReceived,
+            IrqState::RxDone(length, status) => {
+                Self::Done { length, lq: RxQuality::new(status.rssi, status.snr as i8) }
+            }
+        }
+    }
+}
 
 /// LoRa radio using the physical layer API in the external lora-phy crate
 pub struct LoRaRadio<RK, DLY>
