@@ -1,7 +1,5 @@
-use lora_phy::{
-    mod_params::PacketStatus,
-    mod_traits::{DesiredIrqState, IrqState},
-};
+#[cfg(feature = "external-lora-phy")]
+use lora_phy::mod_traits::{IrqState, TargetIrqState};
 
 pub use crate::radio::{Bandwidth, CodingRate, RfConfig, RxQuality, SpreadingFactor, TxConfig};
 
@@ -26,6 +24,40 @@ pub trait Timer {
     async fn delay_ms(&mut self, millis: u64);
 }
 
+/// A state that PhyRxTx should achieve
+pub enum TargetRxState {
+    PreambleReceived,
+    Done,
+}
+
+#[cfg(feature = "external-lora-phy")]
+impl From<TargetRxState> for TargetIrqState {
+    fn from(value: TargetRxState) -> Self {
+        match value {
+            TargetRxState::PreambleReceived => TargetIrqState::PreambleReceived,
+            TargetRxState::Done => TargetIrqState::Done,
+        }
+    }
+}
+
+/// An actual reception state
+pub enum RxState {
+    PreambleReceived,
+    Done { length: u8, lq: RxQuality },
+}
+
+#[cfg(feature = "external-lora-phy")]
+impl From<IrqState> for RxState {
+    fn from(value: IrqState) -> Self {
+        match value {
+            IrqState::PreambleReceived => Self::PreambleReceived,
+            IrqState::RxDone(length, status) => {
+                Self::Done { length, lq: RxQuality::new(status.rssi, status.snr as i8) }
+            }
+        }
+    }
+}
+
 /// An asynchronous radio implementation that can transmit and receive data.
 pub trait PhyRxTx: Sized {
     #[cfg(feature = "defmt")]
@@ -46,10 +78,10 @@ pub trait PhyRxTx: Sized {
     /// possible to await the future again without settings up the receive config again.
     async fn rx(&mut self, rx_buf: &mut [u8]) -> Result<(usize, RxQuality), Self::PhyError> {
         loop {
-            if let IrqState::Done(length, lq) =
-                self.rx_until_state(rx_buf, DesiredIrqState::Done).await?
+            if let RxState::Done { length, lq: status } =
+                self.rx_until_state(rx_buf, TargetRxState::Done).await?
             {
-                return Ok((length as usize, RxQuality::new(lq.rssi, lq.snr as i8)));
+                return Ok((length as usize, status));
             }
         }
     }
@@ -60,10 +92,10 @@ pub trait PhyRxTx: Sized {
     async fn rx_until_state(
         &mut self,
         rx_buf: &mut [u8],
-        _desired_state: DesiredIrqState,
-    ) -> Result<IrqState, Self::PhyError> {
+        _target_state: TargetRxState,
+    ) -> Result<RxState, Self::PhyError> {
         let (length, lq) = self.rx(rx_buf).await?;
-        Ok(IrqState::Done(length as u8, PacketStatus { rssi: lq.rssi(), snr: lq.snr() as i16 }))
+        Ok(RxState::Done { length: length as u8, lq })
     }
 
     /// Puts the radio into a low-power mode
