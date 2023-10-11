@@ -8,7 +8,7 @@ pub struct RfConfig {
 }
 
 impl RfConfig {
-    pub fn payload_time_on_air_us(&self, length: u32) -> u32 {
+    pub fn payload_time_on_air_us(&self, length: u8) -> u32 {
         self.bb.time_on_air_us(None, true, length)
     }
 }
