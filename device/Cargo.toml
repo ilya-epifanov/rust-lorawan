@@ -14,7 +14,7 @@ description = "A Rust LoRaWAN device stack implementation"
 repository = "https://github.com/ivajloip/rust-lorawan"
 
 [dependencies]
-lora-modulation = { version = ">=0.1.2", default-features = false }
+lora-modulation = { version = ">=0.1.3", default-features = false }
 lorawan = { version = "0.7.4", path = "../encoding", default-features = false }
 heapless = "0.7"
 generic-array = "0.14.2"
