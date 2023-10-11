@@ -1,9 +1,9 @@
-use super::radio::{PhyRxTx, RfConfig, RxQuality, TxConfig};
+use super::radio::{PhyRxTx, RfConfig, RxQuality, RxState, TargetRxState, TxConfig};
 use super::region::constants::DEFAULT_DBM;
 use super::Timings;
 
 use lora_phy::mod_params::{BoardType, ChipType, RadioError};
-use lora_phy::mod_traits::{DesiredIrqState, IrqState, RadioKind};
+use lora_phy::mod_traits::RadioKind;
 use lora_phy::{DelayUs, LoRa};
 
 /// LoRa radio using the physical layer API in the external lora-phy crate
@@ -72,9 +72,9 @@ where
 
     async fn tx(&mut self, config: TxConfig, buffer: &[u8]) -> Result<u32, Self::PhyError> {
         let mdltn_params = self.lora.create_modulation_params(
-            config.rf.spreading_factor,
-            config.rf.bandwidth,
-            config.rf.coding_rate,
+            config.rf.bb.sf,
+            config.rf.bb.bw,
+            config.rf.bb.cr,
             config.rf.frequency,
         )?;
         let mut tx_pkt_params =
@@ -96,9 +96,9 @@ where
 
     async fn setup_rx(&mut self, config: RfConfig) -> Result<(), Self::PhyError> {
         let mdltn_params = self.lora.create_modulation_params(
-            config.spreading_factor,
-            config.bandwidth,
-            config.coding_rate,
+            config.bb.sf,
+            config.bb.bw,
+            config.bb.cr,
             config.frequency,
         )?;
         let rx_pkt_params =
@@ -130,11 +130,11 @@ where
     async fn rx_until_state(
         &mut self,
         receiving_buffer: &mut [u8],
-        desired_state: DesiredIrqState,
-    ) -> Result<IrqState, Self::PhyError> {
+        target_state: TargetRxState,
+    ) -> Result<RxState, Self::PhyError> {
         if let Some(rx_params) = &self.rx_pkt_params {
-            match self.lora.rx_until_state(rx_params, receiving_buffer, desired_state).await {
-                Ok(rx_state) => Ok(rx_state),
+            match self.lora.rx_until_state(rx_params, receiving_buffer, target_state.into()).await {
+                Ok(state) => Ok(state.into()),
                 Err(err) => Err(err.into()),
             }
         } else {

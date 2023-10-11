@@ -13,7 +13,6 @@ use defmt::{debug, trace, warn};
 use futures::{future::select, future::Either, pin_mut};
 use generic_array::{typenum::U256, GenericArray};
 use heapless::Vec;
-use lora_phy::{mod_params::PacketStatus, mod_traits::IrqState};
 use lorawan::{
     self,
     creator::DataPayloadCreator,
@@ -26,7 +25,12 @@ use rand_core::RngCore;
 
 type DevNonce = lorawan::parser::DevNonce<[u8; 2]>;
 pub use crate::region::DR;
-use crate::{private::Sealed, radio::types::RadioBuffer, AppSKey, GetRng, NewSKey};
+use crate::{
+    async_device::radio::{RxState, TargetRxState},
+    private::Sealed,
+    radio::types::RadioBuffer,
+    AppSKey, GetRng, NewSKey,
+};
 #[cfg(feature = "external-lora-phy")]
 /// provide the radio through the external lora-phy crate
 pub mod lora_radio;
@@ -479,14 +483,14 @@ where
         rx_config: region::RfConfig,
         preamble_deadline: u32,
         message_timeout_ms: u32,
-    ) -> Result<(u8, PacketStatus), Error<R::PhyError>> {
+    ) -> Result<(u8, RxQuality), Error<R::PhyError>> {
         // Pass the full radio buffer slice to RX
         self.phy.radio.setup_rx(rx_config).await.map_err(Error::Radio)?;
         let state = {
-            let rx_preamble_fut = self.phy.radio.rx_until_state(
-                self.radio_buffer.as_raw_slice(),
-                lora_phy::mod_traits::DesiredIrqState::PreambleReceived,
-            );
+            let rx_preamble_fut = self
+                .phy
+                .radio
+                .rx_until_state(self.radio_buffer.as_raw_slice(), TargetRxState::PreambleReceived);
             let timeout_to_preamble_fut = self.timer.at(preamble_deadline as u64);
 
             pin_mut!(rx_preamble_fut);
@@ -504,27 +508,24 @@ where
         };
 
         match state {
-            IrqState::Waiting => return Err(Error::RxTimeout),
-            IrqState::PreambleReceived => {
+            RxState::PreambleReceived => {
                 // continue with reception
             }
-            IrqState::Done(length, status) => return Ok((length, status)),
+            RxState::Done { length, lq } => return Ok((length, lq)),
         }
 
         #[cfg(feature = "defmt")]
         debug!("preamble received, waiting for payload");
 
-        let rx_full_fut = self.phy.radio.rx_until_state(
-            self.radio_buffer.as_raw_slice(),
-            lora_phy::mod_traits::DesiredIrqState::Done,
-        );
+        let rx_full_fut =
+            self.phy.radio.rx_until_state(self.radio_buffer.as_raw_slice(), TargetRxState::Done);
         let timeout_fut = self.timer.delay_ms(message_timeout_ms as u64);
 
         pin_mut!(rx_full_fut);
         pin_mut!(timeout_fut);
 
         match select(rx_full_fut, timeout_fut).await {
-            Either::Left((Ok(IrqState::Done(length, lq)), _)) => Ok((length, lq)),
+            Either::Left((Ok(RxState::Done { length, lq }), _)) => Ok((length, lq)),
             Either::Left((Err(err), _)) => Err(Error::Radio(err)),
             _ => Err(Error::RxTimeout),
         }
@@ -558,7 +559,7 @@ where
         #[cfg(feature = "defmt")]
         trace!("RX1 with config: {}", &rx_config);
         let expected_payload_air_time_us =
-            rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
+            rx_config.payload_time_on_air_us(expected_payload_length as u32) + 50_000;
         #[cfg(feature = "defmt")]
         trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
         match self
@@ -585,7 +586,7 @@ where
         #[cfg(feature = "defmt")]
         trace!("RX2 with config: {}", &rx_config);
         let expected_payload_air_time_us =
-            rx_config.time_on_air_us(0, true, expected_payload_length as u32) + 50_000;
+            rx_config.payload_time_on_air_us(expected_payload_length as u32) + 50_000;
         #[cfg(feature = "defmt")]
         trace!("expected payload air time: {}ms", expected_payload_air_time_us / 1_000);
         let rxd = self
