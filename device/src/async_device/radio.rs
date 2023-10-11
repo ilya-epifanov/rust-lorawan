@@ -1,6 +1,3 @@
-#[cfg(feature = "external-lora-phy")]
-use lora_phy::mod_traits::{IrqState, TargetIrqState};
-
 pub use crate::radio::{Bandwidth, CodingRate, RfConfig, RxQuality, SpreadingFactor, TxConfig};
 
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -30,32 +27,10 @@ pub enum TargetRxState {
     Done,
 }
 
-#[cfg(feature = "external-lora-phy")]
-impl From<TargetRxState> for TargetIrqState {
-    fn from(value: TargetRxState) -> Self {
-        match value {
-            TargetRxState::PreambleReceived => TargetIrqState::PreambleReceived,
-            TargetRxState::Done => TargetIrqState::Done,
-        }
-    }
-}
-
 /// An actual reception state
 pub enum RxState {
     PreambleReceived,
     Done { length: u8, lq: RxQuality },
-}
-
-#[cfg(feature = "external-lora-phy")]
-impl From<IrqState> for RxState {
-    fn from(value: IrqState) -> Self {
-        match value {
-            IrqState::PreambleReceived => Self::PreambleReceived,
-            IrqState::RxDone(length, status) => {
-                Self::Done { length, lq: RxQuality::new(status.rssi, status.snr as i8) }
-            }
-        }
-    }
 }
 
 /// An asynchronous radio implementation that can transmit and receive data.
