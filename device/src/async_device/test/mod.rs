@@ -36,8 +36,38 @@ async fn test_join_rx1() {
     if let Ok(()) = async_device.await.unwrap() {
         // NB: timer is armed thrice (even if not fired thrice)
         // 1. start of rx1
-        // 2. end of rx1
-        // 3. timeout after preamble
+        // 2. timeout after preamble (not firing)
+        // 3. end of rx1
+        assert_eq!(3, timer.get_armed_count().await);
+    } else {
+        panic!();
+    }
+}
+
+#[ignore]
+#[tokio::test]
+async fn test_join_long_rx1() {
+    let (radio, timer, mut async_device) = setup();
+    // Run the device
+    let async_device =
+        tokio::spawn(async move { async_device.join(&get_otaa_credentials()).await });
+
+    // Trigger beginning of RX1
+    timer.fire().await;
+    // RX preamble
+    radio.fire_preamble();
+    // Preamble received
+    timer.fire().await;
+
+    // Trigger handling of JoinAccept
+    radio.handle_rxtx(handle_join_request);
+
+    // Await the device to return and verify state
+    if let Ok(()) = async_device.await.unwrap() {
+        // NB: timer is armed thrice
+        // 1. start of rx1
+        // 2. timeout after preamble
+        // 3. end of rx1
         assert_eq!(3, timer.get_armed_count().await);
     } else {
         panic!();

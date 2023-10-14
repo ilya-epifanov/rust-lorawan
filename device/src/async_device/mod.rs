@@ -1,5 +1,7 @@
 //! Asynchronous Device using Rust async-await for driving the state machine,
 //! and allowing asynchronous radio implementations. Requires the `async` feature and `nightly`.
+use self::region::RxQuality;
+
 use super::mac::uplink::Uplink;
 
 pub use super::{region, region::Region, JoinMode, SendData, Timings};
@@ -583,6 +585,7 @@ where
                 self.phy.radio.low_power().await.map_err(Error::Radio)?;
                 return Ok(length);
             }
+            #[allow(unused_variables)]
             Err(err) => {
                 #[cfg(feature = "defmt")]
                 debug!("failed receiving an RX1 response: {}", err);
