@@ -54,9 +54,7 @@ impl PhyRxTx for TestRadio {
     ) -> Result<RxState, Self::PhyError> {
         let msg = self.rx.recv().await.unwrap();
         match (msg, target_state) {
-            (Msg::Preamble, TargetRxState::PreambleReceived) => {
-                Ok(RxState::PreambleReceived)
-            }
+            (Msg::Preamble, TargetRxState::PreambleReceived) => Ok(RxState::PreambleReceived),
             (Msg::Preamble, TargetRxState::Done) => {
                 panic!("Received preamble when TargetRxState::Done")
             }
