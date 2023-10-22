@@ -28,9 +28,9 @@ async fn test_join_rx1() {
         tokio::spawn(async move { async_device.join(&get_otaa_credentials()).await });
 
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Trigger handling of JoinAccept
-    radio.handle_rxtx(handle_join_request);
+    radio.handle_rxtx(handle_join_request).await;
 
     // Await the device to return and verify state
     if let Ok(()) = async_device.await.unwrap() {
@@ -44,30 +44,27 @@ async fn test_join_rx1() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_join_long_rx1() {
     let (radio, timer, mut async_device) = setup();
     // Run the device
     let async_device =
         tokio::spawn(async move { async_device.join(&get_otaa_credentials()).await });
-
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // RX preamble
-    radio.fire_preamble();
-    // Preamble received
-    timer.fire().await;
-
+    radio.fire_preamble().await;
+    // We attempt to fire the 2nd timer which would be marking the end of rx1
+    // It should be dropped due to the preamble
+    timer.confirm_dropped_timer(2).await;
     // Trigger handling of JoinAccept
-    radio.handle_rxtx(handle_join_request);
-
+    radio.handle_rxtx_no_preamble(handle_join_request).await;
     // Await the device to return and verify state
     if let Ok(()) = async_device.await.unwrap() {
         // NB: timer is armed thrice
         // 1. start of rx1
-        // 2. timeout after preamble
-        // 3. end of rx1
+        // 2. end of rx1
+        // 3. timeout after preamble
         assert_eq!(3, timer.get_armed_count().await);
     } else {
         panic!();
@@ -82,13 +79,13 @@ async fn test_join_rx2() {
         tokio::spawn(async move { async_device.join(&get_otaa_credentials()).await });
 
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Trigger end of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Trigger start of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Pass the join request handler
-    radio.handle_rxtx(handle_join_request);
+    radio.handle_rxtx(handle_join_request).await;
 
     // Await the device to return and verify state
     if async_device.await.unwrap().is_ok() {
@@ -107,13 +104,13 @@ async fn test_no_join_accept() {
         tokio::spawn(async move { async_device.join(&get_otaa_credentials()).await });
 
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Trigger end of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Trigger start of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Trigger end of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
 
     // Await the device to return and verify state
     if let Err(Error::RxTimeout) = async_device.await.unwrap() {
@@ -130,9 +127,9 @@ async fn test_noise() {
     let async_device =
         tokio::spawn(async move { async_device.join(&get_otaa_credentials()).await });
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Send an invalid lorawan frame. 0 length is enough to confuse it
-    radio.handle_rxtx(|_, _, _| 0);
+    radio.handle_rxtx(|_, _, _| 0).await;
 
     // Await the device to return and verify state
     let Err(Error::UnableToDecodePayload(_)) = async_device.await.unwrap() else {
@@ -155,16 +152,16 @@ async fn test_unconfirmed_uplink_no_downlink() {
         response
     });
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger end of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger start of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger end of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
 
     match async_device.await.unwrap() {
         Err(Error::RxTimeout) => (),
@@ -188,16 +185,16 @@ async fn test_confirmed_uplink_no_ack() {
         response
     });
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger end of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger start of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger end of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
 
     match async_device.await.unwrap() {
         // TODO: implement some ACK failure notification. This response is
@@ -223,11 +220,11 @@ async fn test_confirmed_uplink_with_ack_rx1() {
         response
     });
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
 
     // Send a downlink with confirmation
-    radio.handle_rxtx(handle_data_uplink_with_link_adr_req);
+    radio.handle_rxtx(handle_data_uplink_with_link_adr_req).await;
     match async_device.await.unwrap() {
         Ok(()) => (),
         _ => {
@@ -251,16 +248,16 @@ async fn test_confirmed_uplink_with_ack_rx2() {
         response
     });
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger end of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     assert!(!*send_await_complete.lock().await);
     // Trigger start of RX2
-    timer.fire().await;
+    timer.fire_most_recent().await;
 
     // Send a downlink confirmation
-    radio.handle_rxtx(handle_data_uplink_with_link_adr_req);
+    radio.handle_rxtx(handle_data_uplink_with_link_adr_req).await;
 
     match async_device.await.unwrap() {
         Ok(()) => (),
@@ -286,16 +283,16 @@ async fn test_link_adr_ans() {
         async_device.send(&[1, 2, 3], 3, true).await
     });
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Send a downlink with confirmation
-    radio.handle_rxtx(handle_data_uplink_with_link_adr_req);
+    radio.handle_rxtx(handle_data_uplink_with_link_adr_req).await;
     tokio::time::sleep(tokio::time::Duration::from_millis(15)).await;
     assert!(*send_await_complete.lock().await);
     // at this point, the device thread should be sending the second frame
     // Trigger beginning of RX1
-    timer.fire().await;
+    timer.fire_most_recent().await;
     // Send a downlink with confirmation
-    radio.handle_rxtx(handle_data_uplink_with_link_adr_ans);
+    radio.handle_rxtx(handle_data_uplink_with_link_adr_ans).await;
     match async_device.await.unwrap() {
         Ok(()) => (),
         _ => {
